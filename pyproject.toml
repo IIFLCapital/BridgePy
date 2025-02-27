@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "bridgePy"
+version = "0.1.1"
+description = "A connector Python package to get market feed"
+authors = [
+    { name = "Satheesh Kumar Gopisetty" }
+]
+license = { text = "MIT" }
+dependencies = [
+    "paho-mqtt>=2.1.0",
+    "requests>=2.32.3"
+]
+
+[tool.setuptools.packages]
+find = { where = ["."] }
+
+[tool.setuptools.package-data]
+"bridePy" = ["docs/*"]
