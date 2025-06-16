@@ -147,9 +147,9 @@ def lpp_handler(data: bytearray, topic: str):
     # Create a dictionary to represent the data
     lpp_data = {
         "topic": topic,
-        "lppHigh": data[0],
-        "lppLow": data[1],
-        "priceDivisor": data[2]
+        "lppHigh": unpacked[0],
+        "lppLow": unpacked[1],
+        "priceDivisor": unpacked[2]
     }
 
     # Convert the dictionary to a JSON string
@@ -167,7 +167,7 @@ def market_status_handler(data: bytearray, topic: str):
     # Create a dictionary to represent the data
     market_status_data = {
         "topic": topic,
-        "MarketStatusCode": data[0]
+        "MarketStatusCode": unpacked[0]
     }
 
     # Convert the dictionary to a JSON string
@@ -184,9 +184,9 @@ def upper_circuit_handler(data: bytearray, topic: str):
     # Create a dictionary to represent the data
     upper_circuit_data = {
         "topic": topic,
-        "instrumentId": data[0],
-        "upperCircuit": data[1],
-        "priceDivisor": data[2]
+        "instrumentId": unpacked[0],
+        "upperCircuit": unpacked[1],
+        "priceDivisor": unpacked[2]
     }
 
     # Convert the dictionary to a JSON string
@@ -204,9 +204,9 @@ def lower_circuit_handler(data: bytearray, topic: str):
     # Create a dictionary to represent the data
     lower_circuit_data = {
         "topic": topic,
-        "instrumentId": data[0],
-        "lowerCircuit": data[1],
-        "priceDivisor": data[2]
+        "instrumentId": unpacked[0],
+        "lowerCircuit": unpacked[1],
+        "priceDivisor": unpacked[2]
     }
 
     # Convert the dictionary to a JSON string
@@ -223,9 +223,9 @@ def high_52week_handler(data: bytearray, topic: str):
     # Create a dictionary to represent the data
     high_52week_data = {
         "topic": topic,
-        "instrumentId": data[0],
-        "52WeekHigh": data[1],
-        "priceDivisor": data[2]
+        "instrumentId": unpacked[0],
+        "52WeekHigh": unpacked[1],
+        "priceDivisor": unpacked[2]
     }
 
     # Convert the dictionary to a JSON string
@@ -242,9 +242,9 @@ def low_52week_handler(data: bytearray, topic: str):
     # Create a dictionary to represent the data
     low_52week_data = {
         "topic": topic,
-        "instrumentId": data[0],
-        "52WeekLow": data[1],
-        "priceDivisor": data[2]
+        "instrumentId": unpacked[0],
+        "52WeekLow": unpacked[1],
+        "priceDivisor": unpacked[2]
     }
 
     # Convert the dictionary to a JSON string
