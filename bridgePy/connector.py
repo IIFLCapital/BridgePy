@@ -10,6 +10,15 @@ from paho.mqtt.enums import CallbackAPIVersion
 from . import models as ds
 import logging
 import base64
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.backends.openssl.backend import backend
+from cryptography.hazmat.primitives import serialization
+from Crypto.Random import get_random_bytes
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import AES, PKCS1_v1_5
+from Crypto.Util.Padding import pad
+from Crypto.Util.Padding import unpad
+import struct
 
 
 CallbackOnHandleEventResponse = Callable[[str], None]
@@ -53,6 +62,8 @@ class Connect:
             self.__subscriptions = {}
             self.lock = threading.Lock()
             self.count = 0
+            self.encryDecry=_EncryptionDecryption()
+
 
     def __initialize_mqtt_client(self) -> None:
         self.__mqttClient = mqtt.Client(
@@ -95,7 +106,7 @@ class Connect:
         self.lower_circuit = "prod/marketfeed/lowercircuit/v1/"
         self.order_updates = "prod/updates/order/v1/"
         self.trade_updates = "prod/updates/trade/v1/"
-        self.validateTokenUrl="https://idaas.iiflsecurities.com/v1/access/check/token"
+        self.validateTokenUrl="https://idaas.iiflsecurities.com/v2/access/check/token"
         self.__topic_handler = {}
         
     
@@ -1142,14 +1153,16 @@ class Connect:
             tuple: A tuple containing the validation status and message.
         """
         try:
-           req=ds.ValidateTokenRequest(clientID,token)
-           jreq=json.dumps(req.__dict__)
-           jres=requests.post(url=self.validateTokenUrl,data=jreq,verify=False)
-           res = json.loads(jres.text)
+           encryptedReq=self.encryDecry.encrypt(json.dumps({"userId":clientID,"token":token}))
+           validate_payload = {"cEncData": encryptedReq}
+           jres = requests.post(url=self.validateTokenUrl, json=validate_payload,verify=True)
            if jres.status_code==200:
-               return (res["result"]["status"],res["result"]["message"])
+               validate_json =json.loads(jres.text)
+               res=self.encryDecry.decrypt(validate_json["cRespEncData"]) 
+               data = json.loads(res)
+               return (data["result"]["status"],data["result"]["message"])
            else:
-               return (False,res.text)
+               return (False,jres.reason)
         except Exception as ex:
             if self.__on_error:
                 self.__on_error(-1, str(ex))
@@ -1280,3 +1293,126 @@ class Connect:
         except Exception as ex:
             if self.__on_error:
                 self.__on_error(-1, str(ex))
+
+
+class _EncryptionDecryption:
+    
+    url = 'https://idaas.iiflsecurities.com/v2/access/get/encKey'
+    client_private_key = None
+    client_public_key_b64 = None
+    server_public_key= None
+
+    def __init__(self) -> None:
+        self._generate_rsa_key_pair()
+        self._getServerKey()
+
+
+    def _generate_rsa_key_pair(self):
+        try: 
+            private_key = rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=2048,
+                backend=backend
+            )
+            public_key = private_key.public_key()
+
+            public_bytes = public_key.public_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            self.client_private_key=private_key
+            # Encode to base64 (optional but common for transport)
+            self.client_public_key_b64 = base64.b64encode(public_bytes).decode()
+
+        except Exception as ex:
+            return ex
+
+    def _getServerKey(self):
+        try:
+            jres = requests.post(url=self.url, json={"ceData": self.client_public_key_b64},verify=True)
+            if jres.status_code==200:
+               response_json = jres.json()
+               self.server_public_key = response_json["cPubKey"]
+            else:
+               self.server_public_key = None
+            
+        except Exception as ex:
+            return ex
+
+    def encrypt(self,data: str) -> str:
+        try:
+            # Decode server's public key
+            server_pub_key_der = base64.b64decode(self.server_public_key)
+            rsa_public_key = RSA.import_key(server_pub_key_der)
+            data_bytes = data.encode('utf-8')
+
+            # Generate AES-256 key
+            aes_key = get_random_bytes(32)
+
+            # Generate 12-byte IV (Java default)
+            iv = get_random_bytes(16)
+
+            #  Encrypt data with AES-CBC
+            cipher = AES.new(aes_key, AES.MODE_CBC, iv)
+            ciphertext = cipher.encrypt(pad(data_bytes,AES.block_size))
+
+            # Encrypt AES key with RSA/ECB/PKCS1Padding
+            rsa_cipher = PKCS1_v1_5.new(rsa_public_key)
+            encrypted_aes_key = rsa_cipher.encrypt(aes_key)
+
+            # Prepare payload
+            pubkey_b64_bytes = self.client_public_key_b64.encode()
+            payload = b''
+            payload += struct.pack(">I", len(pubkey_b64_bytes))
+            payload += pubkey_b64_bytes
+            payload += struct.pack(">I", len(iv))
+            payload += iv
+            payload += struct.pack(">I", len(encrypted_aes_key))
+            payload += encrypted_aes_key
+            payload += ciphertext  # Important: ciphertext + tag
+
+            return base64.b64encode(payload).decode()
+        except Exception as ex:
+            return ex
+    
+    def decrypt(self,encrypted_data_base64: str) -> str:
+        try:
+
+            # Decode the base64-encoded payload
+            payload = base64.b64decode(encrypted_data_base64)
+
+            # Extract components from the payload
+            offset = 0
+
+            pubkey_len = struct.unpack(">I", payload[offset:offset + 4])[0]
+            offset += 4
+            pubkey_b64_bytes = payload[offset:offset + pubkey_len]
+            offset += pubkey_len
+
+            iv_len = struct.unpack(">I", payload[offset:offset + 4])[0]
+            offset += 4
+            iv = payload[offset:offset + iv_len]
+            offset += iv_len
+
+            encrypted_aes_key_len = struct.unpack(">I", payload[offset:offset + 4])[0]
+            offset += 4
+            encrypted_aes_key = payload[offset:offset + encrypted_aes_key_len]
+            offset += encrypted_aes_key_len
+
+            ciphertext = payload[offset:]
+
+
+            # Decrypt AES key with RSA (your existing code)
+            aes_key_bytes = self.client_private_key.decrypt(encrypted_aes_key, padding.PKCS1v15())
+
+            # Decrypt actual data with AES-CBC
+            cipher = AES.new(aes_key_bytes, AES.MODE_CBC, iv)
+            decrypted_padded = cipher.decrypt(ciphertext)
+
+            # Unpad the plaintext and decode
+            decrypted_data = unpad(decrypted_padded, AES.block_size)
+            return decrypted_data.decode()
+        
+        except Exception as ex:
+            return ex
+    
