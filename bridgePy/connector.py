@@ -458,7 +458,7 @@ class Connect:
             conn_req (str): JSON string containing connection details. Example:
                 {
                     "host": "bridge.iiflcapital.com",
-                    "port": 9906,
+                    "port": 8883,
                     "token": "your_token_here"
                 }
 
